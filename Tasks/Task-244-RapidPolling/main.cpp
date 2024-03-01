@@ -18,6 +18,10 @@ LatchedLED disp(LatchedLED::SEVEN_SEG);
 // Timer for the flashing light
 Timer tmr;
 
+// delay variable of type chrono
+milliseconds delay_desired = 100ms; // variable stores increament or decrement value by +-10ms whenever count increases
+// or decreases
+
 int main()
 {
     volatile int count = 0;
@@ -69,6 +73,7 @@ int main()
                 //Button A was pressed!
                 if (count < 99) {
                     count+=1;
+                    delay_desired += 10ms;
                 }
             }
 
@@ -89,6 +94,7 @@ int main()
                 //Button B was pressed!
                 if (count > 0) {
                     count-=1;
+                    delay_desired -= 10ms;
                 }
             }
             
@@ -102,7 +108,7 @@ int main()
         }
 
         // LED
-        if (tm >= 250ms) {
+        if (tm >= delay_desired) {
             greenLED = !greenLED;
             tmr.reset();
         }
