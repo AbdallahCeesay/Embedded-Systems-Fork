@@ -53,7 +53,9 @@ int main()
         // ************************************
         btnA_curr = buttonA;
         btnB_curr = buttonB;
-        tm = tmr.elapsed_time();
+        tm = tmr.elapsed_time();  // variable tm with datatype chrono. time elapsed is stored in this variable.
+        // and time elapsed has a unit ms which can only by understood by the mbed API becasue of the namespace std::chrono
+        // IMPORTANT CONCEPT!!!!
 
         // ****************************
         // UPDATE IF THERE WAS A CHANGE
