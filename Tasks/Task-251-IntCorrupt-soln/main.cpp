@@ -20,7 +20,7 @@ void countUp()
     //RED MEANS THE COUNT UP FUNCTION IS IN ITS CRITICAL SECTION
     green_led = 1;
     for (unsigned int n=0; n<N; n++) {
-        CriticalSectionLock::enable();
+        CriticalSectionLock::enable(); // all INTERRUPTS are disabled
         counter++; 
         counter++;
         counter++;
@@ -31,7 +31,7 @@ void countUp()
         counter++;
         counter++;
         counter++; 
-        CriticalSectionLock::disable();
+        CriticalSectionLock::disable(); // returns them to their previous state (turns them back on in this case)
     }  
     green_led = 0; 
     
@@ -47,7 +47,7 @@ void countDown()
     //YELLOW MEANS THE COUNT DOWN FUNCTION IS IN ITS CRITICAL SECTION
     yellow_led = 1;
     for (unsigned int n=0; n<N; n++) {
-        CriticalSectionLock::enable();
+        CriticalSectionLock::enable(); // all INTERRUPTS diable
         counter--;
         counter--;
         counter--;
@@ -58,7 +58,7 @@ void countDown()
         counter--;
         counter--;
         counter--;  
-        CriticalSectionLock::disable();
+        CriticalSectionLock::disable(); //returns them to their previous state (turns them back on in this case)
     }
     yellow_led = 0;
       
@@ -77,7 +77,7 @@ int main() {
     
     if (button == PRESSED) {
         //VERSION 2: short delay allowing main to be preempted - you might want to tweak this value
-        t1.attach(&countDown, 25us);
+        t1.attach(&countDown, 15us);
     } else {
         //VERSION 1: 2s - ENOUGH TIME FOR COUNTUP TO FINISH
         t1.attach(&countDown, 2s);                   

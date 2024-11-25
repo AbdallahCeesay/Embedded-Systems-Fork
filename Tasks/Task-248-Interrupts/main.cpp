@@ -9,7 +9,7 @@ int counter=0;
 
 InterruptIn btnA(BTN1_PIN);
 InterruptIn btnB(BTN2_PIN);
-Ticker tick;
+Ticker tick; // this is a timer interrupt that takes function as a argument and calls it at a specific rate
 
 DigitalOut redLED(TRAF_RED1_PIN);       //Red Traffic 1
 DigitalOut yellowLED(TRAF_YEL1_PIN);    //Yellow Traffic 1
@@ -29,19 +29,27 @@ void funcTmr()
     greenLED = !greenLED;
 }
 
+void funcB ()
+{
+    yellowLED =!yellowLED;
+}
+
 int main()
 {
     //Set up interrupts
     btnA.rise(&funcA);
-    tick.attach(&funcTmr, 500ms);
+    btnB.fall(&funcB);
+    tick.attach(&funcTmr, 500ms); // this interrupt calls int the function funcTmr every 0.5s
     
     //Main loop - mostly sleeps :)
     while (true) {
-        sleep();
+        sleep(); // puts the CPU in low power mode
 
-        printf("I have been woken %d times\n", ++counter);
+        printf("I have been woken %d times\n", ++counter); 
     }
-}
+} 
+
+
 
 
 

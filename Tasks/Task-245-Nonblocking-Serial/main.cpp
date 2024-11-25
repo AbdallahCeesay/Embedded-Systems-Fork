@@ -13,7 +13,7 @@ static BufferedSerial serial_port(USBTX, USBRX);
 int main()
 {
     // Set up the serial port to 9600,8,N,1
-    serial_port.set_baud(9600);
+    serial_port.set_baud(9600);     // baud rate set
     serial_port.set_format(
         /* bits */ 8,
         /* parity */ SerialBase::None,
@@ -21,11 +21,11 @@ int main()
     );
 
     //This is critical - turn off blocking
-    serial_port.set_blocking(false);
+    // serial_port.set_blocking(true);
     
     //Write strings to the terminal
     char msg1[] = "Press a key to toggle the green LED\n\r";
-    char msg2[] = "Press 1 to turn ON the buzzer\n\r";
+    char msg2[] = "Press 1 to turn ON the buzzer\n\r";  
     char msg3[] = "Press 2 to turn OFF the buzzer\n\r";
     serial_port.write(msg1, sizeof(msg1));
     serial_port.write(msg2, sizeof(msg2));

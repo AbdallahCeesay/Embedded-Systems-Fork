@@ -26,7 +26,7 @@ void onTick()
     led2 = !led2;
 }
 
-void on_rx_interrupt()
+void on_rx_interrupt() 
 {
     CriticalSectionLock lock;
     char p;
@@ -77,11 +77,7 @@ int main(void)
 {
     // Set desired properties (115200-8-N-1).
     serial_port.baud(115200);
-    serial_port.format(
-        /* bits */ 8,
-        /* parity */ SerialBase::None,
-        /* stop bit */ 1
-    );
+    serial_port.format(8,SerialBase::None,1); // setup the serial port
 
     // Register a callback to process a Rx (receive) interrupt.
     serial_port.attach(&on_rx_interrupt, SerialBase::RxIrq);
@@ -99,5 +95,4 @@ int main(void)
         CriticalSectionLock::disable();
         disp.printf("T=%Ldms", temp/1000);    
     }
-    
 }

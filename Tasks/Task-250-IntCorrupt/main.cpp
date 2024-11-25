@@ -73,11 +73,12 @@ int main() {
     // ALL IT DOES IS CHANGE THE TIMING OF THE ISR, NOT THE FUNCTION
     
     if (button == PRESSED) {
-        //VERSION 2: short delay allowing main to be preempted - you might want to tweak this value
-        t1.attach(&countDown, 25us);
+        //VERSION 2: short delay allowing main to be preempted (INTERRUPTED) - you might want to tweak this value
+        t1.attach(&countDown, 15us); //this delay is short to INTERRUPT count up after 15 microseconds if the button is pressed (and held)
+        // if the above code runs instead of the one below, this is when a race condition occurs and count does not equal zero
     } else {
         //VERSION 1: 2s - ENOUGH TIME FOR COUNTUP TO FINISH
-        t1.attach(&countDown, 2s);                   
+        t1.attach(&countDown, 2s); // else if the button is not pressed,wait 2s before calling in the INTERRUPT. This allows countUp to finish                  
     }
     
     //Run count up on the main thread

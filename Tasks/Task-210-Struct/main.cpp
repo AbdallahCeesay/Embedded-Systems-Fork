@@ -1,10 +1,11 @@
 #include "mbed.h"
+#include <cstdio>
 
 // Date Type ComplexNumber_C
-typedef struct {
+ struct ComplexNumber_C{
   double real;
   double imag;
-} ComplexNumber_C;
+};
 
 
 int main() {
@@ -21,9 +22,15 @@ int main() {
 
     // TASK:
     // Create another complex number y
-    // Calculate the complex sum of p and q and store in y
-    // Use printf to display as a complex number (hint: you need two placeholders)
+    ComplexNumber_C y;
+    // Calculate the complex sum of p and q and store in y 
+    y.real = p.real + q.real;
+    y.imag = p.imag + q.imag;
     
+    // Use printf to display as a complex number (hint: you need two placeholders)
+    printf("Complex Sum: %.2f + %.2fi \n", y.real, y.imag); 
     while (true) {
+        
     }
 }
+
