@@ -12,7 +12,7 @@ Thread t1, t2;
 
 int main() {
 
-    FlashingLED yellow(TRAF_YEL1_PIN);
+    FlashingLED yellow(TRAF_YEL1_PIN); // this class was created by Nick, and it uses a thread to flash an LED on and off
     t1.start(task1);
     t2.start(task2);
     
