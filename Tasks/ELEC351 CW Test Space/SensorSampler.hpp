@@ -1,6 +1,6 @@
 
 /* 
-* Filename: MySensorData
+* Filename: SensorSampler.hpp
 * Author: Abdallah Ceesay 10726858
 * Module: ELEC 351 Advanced Embedded Programming
 * Institution: Plymouth University
@@ -17,12 +17,12 @@
 #include <chrono>
 
 class SensorSampler {
-    public: 
+    public:
         /* constructor of this class */
         SensorSampler();
 
         /*method to start the sampling thread - this is done every 10 secs*/
-        void start();
+        void start_Sampling();
 
     /*using encapsulation here, the implementation of the sampling of the sensors is hidden from the end user */
     private:

@@ -61,7 +61,7 @@ int main()
     // Print the time and date
     time_t time_now = time(NULL);   // Get a time_t timestamp from the RTC
     struct tm* tt;                  // Create empty tm struct
-    tt = localtime(&time_now);      // Convert time_t to tm struct using localtime
+    tt = localtime(&time_now);      // Convert time_t to tm struct using localtime 
     printf("%s\n",asctime(tt));     // Print in human readable format
 
     while (true) {
@@ -122,4 +122,14 @@ int main()
         ThisThread::sleep_for(std::chrono::seconds(5));
     }
 }
+
+
+
+// example ISR code
+// void timer_ISR() {
+
+    // detach interrupt (tmr.attach(NULL)) -- to prevent it from interrupting until we are done
+    // send flag
+    // return
+// }
 

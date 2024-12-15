@@ -1,9 +1,9 @@
 /* 
-* Filename: MySensorData
+* Filename: SensorSampler.cpp
 * Author: Abdallah Ceesay 10726858
-*Module: ELEC 351 Advanced Embedded Programming
+* Module: ELEC 351 Advanced Embedded Programming
 * Institution: Plymouth University
-*Professor: Yu Yao. Honourable mention: Nickolas Outram, Andrew Norris
+* Professor: Yu Yao. Honourable mention: Nickolas Outram, Andrew Norris
 * Date: 25/11/24
 * Description: method, constructor and Function definitions for this project
 */
@@ -12,7 +12,7 @@
 #include "uop_msb.h"
 #include <chrono>
 #include <cstdio>
-#include "Sensor_Sampler.hpp"
+#include "SensorSampler.hpp"
 
 extern EnvSensor env;
 extern AnalogIn ldr;
@@ -24,16 +24,26 @@ SensorSampler::SensorSampler() : samplingThread(osPriorityHigh, 1024) {
     // note to self, don't forget to change the stack size to accommodate for more local vaiables
 }
 
-void SensorSampler::start() {
+void SensorSampler::start_Sampling() {
     samplingThread.start( callback(this, &SensorSampler::sampleData)); /*passing a reference to the function start using callback*/
 }
 
 void SensorSampler::sampleData() {
     
     while (true) {
+
+
+        // use signal wait mechanism //
+        // 1 create ISR
+        // 2 create timer/ticker
+        // 3 attach the timer to the ISR every x seconds
+        // 4 ISR sends signal/flag to this sampling thread
+        // 5 ThisThread::flags_wait_any(flag value here from ISR)
+        // 6 unblocks when receiving flag
+        // 6 clear the flags - these can queue up (ThisThread::flags_clear(flag value))
+
+        // remove the chrono stuff - timing is handled by ISR and timer!!!
         
-        /*record the start time for this method. this will be used to account for sample jitter*/
-        auto start = timer.elapsed_time();    /*I am not sure what type elapsed_time will return so I used auto to let the compiler decide that*/
         
         float temperature = env.getTemperature();
         float pressure = env.getPressure();
@@ -41,11 +51,7 @@ void SensorSampler::sampleData() {
         float lightLevel = ldr.read();
         printf("Temperature: \t %.2f°C, Pressure: %.2fmbar \n, Light Level:  %.2f\n", temperature, pressure, lightLevel);
 
-        /*this is to ensure that the sampling is done every 10 sec exactly. It measures the time is takes for the data to be sampled and subtracts that from the sleep time of the thread*/
-        auto elapsed = timer.elapsed_time() - start;
-
-        ThisThread::sleep_for(10s - std::chrono::duration_cast<std::chrono::seconds>(elapsed)); // signaling example 
-        /*std::chrono::duration_cast<std::chrono::seconds>
-        this is to make sure that both operands are of the same type */
+        // re-enable timer interrupt here
+        // tmr.attach(...)
+        
     }
-}

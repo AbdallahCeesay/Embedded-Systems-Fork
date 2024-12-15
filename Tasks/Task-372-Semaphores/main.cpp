@@ -6,8 +6,8 @@
 #include <cstdio>
 using namespace uop_msb;
  
-Semaphore sem1;
-Semaphore sem2(10);
+Semaphore sem1; /*semaphore initialized to 0*/
+Semaphore sem2(10); /*semaphore ionitialized to 10*/
 Mutex countLock;
 uint16_t counter = 0;
 Thread t1;

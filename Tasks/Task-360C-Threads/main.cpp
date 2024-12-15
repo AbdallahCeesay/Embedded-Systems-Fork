@@ -5,6 +5,7 @@
 
 using namespace uop_msb;
 
+/* fucntion decalration */
 void task1();
 void task2();
 
@@ -16,7 +17,7 @@ int main() {
     t1.start(task1);
     t2.start(task2);
     
-    //t1.set_priority(osPriorityRealtime);  //Try this
+    t2.set_priority(osPriorityRealtime);  //Try this
 
     //Wait for t1 and t2 to end (which they never do)
     t1.join();
@@ -31,7 +32,7 @@ void task1() {
     
     while(true) {
         while (sw1 == 0) {};            //BLOCKS via SPINNING
-        ThisThread::sleep_for(50ms);    //Blocks in the WAITING state
+        ThisThread::sleep_for(50ms);    //Blocks in the WAITING state. This thread will NOT be scheduled to run for another 50ms
         while (sw1 == 1) {};            //BLOCKS via SPINNING
         red_led = !red_led;             
         ThisThread::sleep_for(50ms);    //Blocks in the WAITING state

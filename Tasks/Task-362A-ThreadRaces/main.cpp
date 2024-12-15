@@ -25,7 +25,7 @@ Thread t2;
 //Shared mutable state
 volatile long long counter = 0; //Volatile means it must be stored in memory
 
-//Increment the shared variable 
+//Increment the shared variable. This shared variable means that it is been used by both reads.
 void countUp()
 {
     //RED MEANS THE COUNT UP FUNCTION IS IN ITS CRITICAL SECTION

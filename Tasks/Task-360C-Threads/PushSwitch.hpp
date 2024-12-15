@@ -9,6 +9,8 @@ private:
     InterruptIn switchInterrupt;
     osThreadId_t threadID;
 
+    /* these methods are called when a switched is pressed */
+    /* and they are passed by reference to their corresponding methods that are public. each method also has it's own thread ID */
     void switchPressed() {
         switchInterrupt.rise(NULL);
         osSignalSet(threadID, RISING_EVENT);
@@ -24,18 +26,24 @@ private:
     }
     
 public:
-    PushSwitch(PinName pin) : switchInterrupt(pin)
+/*when you create an object of this calss,
+1.  Initialize the object with the pin name, in this case an INTERRUPT
+2.  Get the thread ID for the object in order to know what thread this object is running in and what thead to INTERRUPT when the interrupt is called*/
+    PushSwitch(PinName pin) : switchInterrupt(pin) 
     {
-       threadID = ThisThread::get_id();
+       threadID = ThisThread::get_id(); 
     }
+    /*Destructor then sets the value for the rise (1) and fall (2) to Zero (0)*/
     ~PushSwitch() {
         switchInterrupt.rise(NULL);
         switchInterrupt.fall(NULL);
     }
 
     void waitForPress() {       
-        switchInterrupt.rise(callback(this, &PushSwitch::switchPressed));
-        ThisThread::flags_wait_any(RISING_EVENT);      
+        switchInterrupt.rise(callback(this, &PushSwitch::switchPressed)); /*callback used to get the address of a member function*/
+        ThisThread::flags_wait_any(RISING_EVENT);    /* this is blocking. WAITING for a press. From the way RISING_EVENT has been set in the struct, it seems
+        line that the ::flags-wait_any takes only integers.
+        Now that I have confirmed, it does take in 32 bit integers*/
     }
 
     void waitForRelease() {       
