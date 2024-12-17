@@ -16,12 +16,20 @@
 
 extern EnvSensor env;
 extern AnalogIn ldr;
+extern Thread t1;
+extern Mutex mtx;
+
+typedef struct {
+    float temperature;
+    float pressure;
+    float lightLevel;
+
+} Envdata_t;
+
 
 /*this constructor is to make sure that whenever an object of this class is created, it is set to the highest priority thread and sets the stack size*/
-
 SensorSampler::SensorSampler() : samplingThread(osPriorityHigh, 1024) {
     /*sets the thread priority and also the stact size. */
-    // note to self, don't forget to change the stack size to accommodate for more local vaiables
 }
 
 void SensorSampler::start_Sampling() {
@@ -29,29 +37,39 @@ void SensorSampler::start_Sampling() {
 }
 
 void SensorSampler::sampleData() {
+
+    
+    extern volatile Envdata_t data;
+    uint8_t idx = 0;
     
     while (true) {
-
-
-        // use signal wait mechanism //
-        // 1 create ISR
-        // 2 create timer/ticker
-        // 3 attach the timer to the ISR every x seconds
-        // 4 ISR sends signal/flag to this sampling thread
-        // 5 ThisThread::flags_wait_any(flag value here from ISR)
-        // 6 unblocks when receiving flag
-        // 6 clear the flags - these can queue up (ThisThread::flags_clear(flag value))
-
-        // remove the chrono stuff - timing is handled by ISR and timer!!!
         
+        // wait for sampling_ISR flag
+        ThisThread::flags_wait_any(2);
+        ThisThread::flags_clear(2);
+
+        ///////// critical section begin /////////
+        mtx.lock();
+
+        // read data
+        data.temperature = env.getTemperature();
+        data.pressure = env.getPressure();
+        data.lightLevel = ldr.read();
+
+
+        // for debug only
+        // printf("\nTemperature:\t%3.1fC\nPressure:\t%4.1fmbar\nLight Level:\t%1.2f\n", data.temperature,data.pressure,data.lightLevel);
+
+        mtx.unlock();
+        ///////// critical section end /////////
+
         
-        float temperature = env.getTemperature();
-        float pressure = env.getPressure();
 
-        float lightLevel = ldr.read();
-        printf("Temperature: \t %.2f°C, Pressure: %.2fmbar \n, Light Level:  %.2f\n", temperature, pressure, lightLevel);
+        // wake up producer thread
+        t1.flags_set(4);
 
-        // re-enable timer interrupt here
-        // tmr.attach(...)
         
     }
+    
+}
+
