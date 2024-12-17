@@ -38,6 +38,8 @@ class Flashy {
     //OVERLOAD constructor
     Flashy(PinName pin) : Flashy(pin, 500ms) {
     }
+
+    /*Destructor*/
     ~Flashy() {
         enable(false);
         led = 0;

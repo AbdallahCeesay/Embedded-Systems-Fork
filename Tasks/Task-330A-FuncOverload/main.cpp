@@ -39,6 +39,10 @@ public:
         _real = stod(strVal);
     }
 
+    void setValue (DoubleNumber u) { /*u is an object of type DoubleNumber, therefore it allows us to access the methods in the class using the dot operator.*/
+        _real = u.getValue();
+    }
+
     double getValue() {
         return _real;
     }
