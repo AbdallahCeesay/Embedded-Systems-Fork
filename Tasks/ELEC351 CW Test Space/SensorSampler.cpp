@@ -29,7 +29,7 @@ typedef struct {
 
 
 /*this constructor is to make sure that whenever an object of this class is created, it is set to the highest priority thread and sets the stack size*/
-SensorSampler::SensorSampler() : samplingThread(osPriorityHigh, 1024) {
+SensorSampler::SensorSampler() : samplingThread(osPriorityHigh, 2048) {
     /*sets the thread priority and also the stact size. */
 }
 

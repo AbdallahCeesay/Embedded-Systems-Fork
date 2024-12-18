@@ -24,14 +24,13 @@ typedef struct {
 
 volatile Envdata_t data; // shared variable between consumer and producer thread
  
-Mutex mtx;
+Mutex mtx, conumer_to_sdcard;
 
 Ticker tmr;
 SensorSampler sensorSampler;
 Thread producerThread, consumerThread, sdcardThread;
 Mail<Envdata_t, size> mail_box;
 Queue<Envdata_t, size> sdcard_queue; // queue for sdcard thread
-
 
 void producer();
 void consumer();
@@ -98,20 +97,24 @@ void consumer()
         ThisThread::flags_wait_any(6); // waits for this signal from the producer thread then start flusing the mailbox
         ThisThread::flags_clear(6);
         
-        printf("******* FLUSHING *******\n");
+        printf("\n******* FLUSHING *******\n");
         
-        while(!mail_box.empty()) {
+        while(!mail_box.empty()) 
+        {
+            Envdata_t *rx = mail_box.try_get();
+            if (rx) 
+            {
+                Envdata_t received_data = *rx;
 
-            // retrieve pointer, pointing to the data from buffer
-            Envdata_t* rx = mail_box.try_get();
-            // make a copy of this data because... (may not be needed)
-            Envdata_t received_data = *rx;
-            // ...the memory is now freed
-            // check why the "free" is failing!!!
-            if(mail_box.free(rx) == osOK) printf("success!\n");
-            else printf("failed!\n");
-
-            printf("\nTemperature:\t%3.1fC\nPressure:\t%4.1fmbar\nLight Level:\t%1.2f\n", received_data.temperature,received_data.pressure,received_data.lightLevel);
+                /*send data to the sdcard*/
+                if (sdcard_queue.try_put(&received_data)) printf("Data added to the Sd card queue.\n");
+             
+                else printf("SD card queue FULL\n");
+            }
+                /*Full mailbox memory*/
+                if (mail_box.free(rx) == osOK) printf("Mail free successful\n"); 
+                
+                else printf("Mail free failed\n");     
         }
 
         // once empty and flushing completed, send signal to the producer thread to begin adding to the mailbox again
@@ -123,24 +126,97 @@ void consumer()
 }
 
 
+
+// thread to get the sampled data from the consumer
+// void SDcard () {
+
+//     ThisThread::flags_wait_any(10); // waiting for a flag from the consumer thread
+//    // ThisThread::flags_clear(10);
+
+//     char buffer[128];
+
+//     /*process data in the SDcard queue*/
+
+//     while (!sdcard_queue.empty()) {
+//         Envdata_t *sd_data;
+
+//         if (sdcard_queue.try_get(&sd_data)) {
+//             snprintf(buffer, sizeof(buffer),"\nTemperature: %3.1fC\nPressure: %4.1fmbar\nLight Level: %1.2f\n",
+//                          sd_data->temperature, sd_data->pressure, sd_data->lightLevel);
+//         }
+
+//         /*check if the sd card is inserted*/
+
+//         if (!sd.card_inserted())  printf("SD card not inserted\n");
+        
+//         if (sd.write_file("SampleData.txt",buffer)) printf("Data written to the SD Card successfull\n"); 
+        
+//         else   printf("Failed to write to the SD card\n");
+          
+//         /*print to the terminal*/
+//         printf("SD card Data:\n%s", buffer);
+//     }
+// }
+
+void SDcard() {
+    while (true) {
+        // Wait for a flag from the consumer thread to process the SD card queue
+        ThisThread::flags_wait_any(10);
+        ThisThread::flags_clear(10);
+
+        printf("\n--- Processing SD card queue ---\n");
+
+        char buffer[128];
+        bool success = true;
+
+        /* Process and write all data in the SD card queue */
+        while (!sdcard_queue.empty()) {
+            Envdata_t *sd_data;
+
+            if (sdcard_queue.try_get(&sd_data)) {
+                // Format the data into the buffer
+                snprintf(buffer, sizeof(buffer),
+                         "\nTemperature: %3.1fC\nPressure: %4.1fmbar\nLight Level: %1.2f\n",
+                         sd_data->temperature, sd_data->pressure, sd_data->lightLevel);
+
+                /* Check if the SD card is inserted */
+                if (!sd.card_inserted()) {
+                    printf("SD card not inserted. Skipping write operation.\n");
+                    success = false;
+                    break; // Exit early if SD card is not available
+                }
+
+                /* Write to the SD card */
+                if (sd.write_file("SampleData.txt", buffer)) {
+                    printf("Data written to the SD card successfully:\n%s", buffer);
+                } else {
+                    printf("Failed to write to the SD card.\n");
+                    success = false;
+                    break; // Exit if writing fails
+                }
+
+            } else {
+                printf("Failed to retrieve data from the SD card queue.\n");
+                success = false;
+                break;
+            }
+        }
+
+        /* Acknowledgment */
+        if (success) {
+            printf("\n--- All samples successfully written to the SD card. Buffer emptied. ---\n");
+        } else {
+            printf("\n--- Error occurred while processing SD card data. ---\n");
+        }
+    }
+}
+
+
+
 /*ISR*/
 
 void sampling_ISR ()
 {
 
     sensorSampler.samplingThread.flags_set(2); // sends a flag to the sampleData method in the class to begin sampling.
-}
-
-// thread to get the sampled data from the consumer
-void SDcard () {
-
-    ThisThread::flags_wait_any(10); // waiting for a flag from the consumer thread
-    ThisThread::flags_clear(10);
-
-    if(!sd.card_inserted()){
-        printf("\nInsert the SDCard\n");
-        return;
-    }
-    sd.write_file("SampleData", "hello");
-
 }
