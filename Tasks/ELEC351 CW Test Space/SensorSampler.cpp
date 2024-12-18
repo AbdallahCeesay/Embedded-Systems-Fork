@@ -16,8 +16,9 @@
 
 extern EnvSensor env;
 extern AnalogIn ldr;
-extern Thread t1;
+extern Thread producerThread;
 extern Mutex mtx;
+
 
 typedef struct {
     float temperature;
@@ -40,35 +41,26 @@ void SensorSampler::sampleData() {
 
     
     extern volatile Envdata_t data;
-    uint8_t idx = 0;
     
     while (true) {
         
-        // wait for sampling_ISR flag
+        /* wait for sampling_ISR flag */
         ThisThread::flags_wait_any(2);
         ThisThread::flags_clear(2);
 
-        ///////// critical section begin /////////
+        /******** critical section begin ********/
         mtx.lock();
 
-        // read data
+        /*read data*/
         data.temperature = env.getTemperature();
         data.pressure = env.getPressure();
         data.lightLevel = ldr.read();
 
 
-        // for debug only
-        // printf("\nTemperature:\t%3.1fC\nPressure:\t%4.1fmbar\nLight Level:\t%1.2f\n", data.temperature,data.pressure,data.lightLevel);
-
         mtx.unlock();
-        ///////// critical section end /////////
+        /******** critical section end ********/
 
-        
-
-        // wake up producer thread
-        t1.flags_set(4);
-
-        
+        producerThread.flags_set(4); // set a flag to wake up the producer thread to take the sampled data
     }
     
 }
