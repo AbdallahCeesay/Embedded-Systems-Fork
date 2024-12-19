@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <chrono>
+#include <_Terminal.hpp>
+#include <ctime>
 
 // parameters
 constexpr uint8_t size = 4;                                     // size of Mail Queue
@@ -24,7 +26,9 @@ Mutex mtx, consumer_to_sdcard;
 
 Ticker tmr;
 SensorSampler sensorSampler;
-Thread producerThread, consumerThread, sdcardThread, serialThread;
+
+Thread producerThread, consumerThread, sdcardThread, serialThread, timeThread;
+
 Mail<Envdata_t, size> mail_box;
 Queue<Envdata_t, size> sdcard_queue; // queue for sdcard thread
 
@@ -39,9 +43,13 @@ void sampling_ISR();
 void SDcard();
 void monitorSerial();
 void processSerialInput();
+void setDateAndTime();
 
 int main()
 {
+    uint64_t currentTime = 1734622120;
+    set_time(currentTime);
+
     Watchdog &watchdog = Watchdog::get_instance();
     watchdog.start(WATCHDOG_TIMEOUT_MS);
 
@@ -49,6 +57,7 @@ int main()
     consumerThread.start(consumer);
     sdcardThread.start(SDcard);
     serialThread.start(monitorSerial);
+    timeThread.start(setDateAndTime);
 
     tmr.attach(&sampling_ISR, T_sampling);
     sensorSampler.start_Sampling();
@@ -93,6 +102,7 @@ void producer()
 void consumer()
 {
     while (true) {
+        Watchdog::get_instance().kick();
         // Once buffer is full
         ThisThread::flags_wait_any(6); // waits for signal from producer thread
         ThisThread::flags_clear(6);
@@ -127,15 +137,19 @@ void consumer()
     }
 }
 
-void SDcard() {
-    while (true) {
+void SDcard() 
+{// implement data time as well
+     while (true) 
+    {
+        Watchdog::get_instance().kick();
+
         // Wait for a flag from the consumer thread to process the SD card queue
         ThisThread::flags_wait_any(10);
         ThisThread::flags_clear(10);
 
         printf("\n--- Processing SD card queue ---\n");
 
-        char buffer[128];
+        char buffer[256];
         bool success = true;
 
         /* Process and write all data in the SD card queue */
@@ -143,10 +157,23 @@ void SDcard() {
             Envdata_t *sd_data;
 
             if (sdcard_queue.try_get(&sd_data)) {
-                // Format the data into the buffer
-                snprintf(buffer, sizeof(buffer),
-                         "\nTemperature: %3.1fC\nPressure: %4.1fmbar\nLight Level: %1.2f\n",
-                         sd_data->temperature, sd_data->pressure, sd_data->lightLevel);
+                // Get the current system time
+                time_t timeNow = time(NULL);
+                struct tm* timeInfo = localtime(&timeNow);
+
+                if (timeInfo) {
+                    // Format the data into the buffer with the date and time
+                    snprintf(buffer, sizeof(buffer),
+                             "\nDate: %04d-%02d-%02d Time: %02d:%02d:%02d\nTemperature: %3.1fC\nPressure: %4.1fmbar\nLight Level: %1.2f\n",
+                             timeInfo->tm_year + 1900, timeInfo->tm_mon + 1, timeInfo->tm_mday,
+                             timeInfo->tm_hour, timeInfo->tm_min, timeInfo->tm_sec,
+                             sd_data->temperature, sd_data->pressure, sd_data->lightLevel);
+                } else {
+                    // If time fetching fails, log an error
+                    snprintf(buffer, sizeof(buffer),
+                             "\nTime unavailable\nTemperature: %3.1fC\nPressure: %4.1fmbar\nLight Level: %1.2f\n",
+                             sd_data->temperature, sd_data->pressure, sd_data->lightLevel);
+                }
 
                 /* Check if the SD card is inserted */
                 consumer_to_sdcard.lock();
@@ -157,7 +184,7 @@ void SDcard() {
                 }
 
                 /* Write to the SD card */
-                if (sd.write_file("SampleData.txt", buffer)) {
+                if (!sd.write_file("SampleData.txt", buffer)) {
                     printf("Data written to the SD card successfully:\n%s", buffer);
                 } else {
                     printf("Failed to write to the SD card.\n");
@@ -185,9 +212,10 @@ void SDcard() {
 
 /* Serial Monitoring */
 void monitorSerial() {
-    while (true) {
+    while (true) 
+    {
+        Watchdog::get_instance().kick();
         processSerialInput();
-        ThisThread::sleep_for(100ms); // Poll every 100ms
     }
 }
 
@@ -217,3 +245,16 @@ void processSerialInput() {
     }
 }
 
+void setDateAndTime() {
+    
+ while (true) {
+        time_t timeNow = time(NULL);
+        struct tm* time = localtime(&timeNow);
+
+        if (time) {
+            printf("Current Time: %s\n", asctime(time));
+        } else {
+            printf("Error retrieving time\n");
+        }
+    }
+}

@@ -27,7 +27,9 @@ void SensorSampler::start_Sampling() {
 void SensorSampler::sampleData() {
     extern volatile Envdata_t data;
 
-    while (true) {
+    while (true) 
+    {
+        Watchdog::get_instance().kick();
         // Wait for sampling_ISR flag
         uint32_t flags = ThisThread::flags_wait_any(2 | 4); // Wait for sampling or disable flag
 
