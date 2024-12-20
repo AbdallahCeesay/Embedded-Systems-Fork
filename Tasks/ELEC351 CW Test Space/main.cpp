@@ -27,7 +27,9 @@ uint32_t sampling_toggle_flag = 1024;
 
 
 extern SDCard sd;
-
+extern Buzzer buzz;
+extern EnvSensor env;
+extern AnalogIn ldr;// (AN_LDR_PIN);
 
 typedef struct {
 
@@ -40,11 +42,11 @@ typedef struct {
 
 volatile Envdata_t data; // shared variable between consumer and producer thread
  
-Mutex mtx, conumer_to_sdcard;
+Mutex mtx, conumer_to_sdcard, light;
 
 Ticker tmr;
 SensorSampler sensorSampler;
-Thread producerThread, consumerThread, sdcardThread, controlThread;
+Thread producerThread, consumerThread, sdcardThread, controlThread, emergencyThread;
 Mail<Envdata_t, size> mail_box;
 Queue<Envdata_t, size> sdcard_queue; // queue for sdcard thread
 
@@ -53,6 +55,7 @@ void consumer();
 void sampling_ISR();
 void SDcard();
 void control_thread();
+void emergency();
 
 int main()
 {
@@ -75,6 +78,7 @@ int main()
     consumerThread.start(consumer);
     sdcardThread.start(SDcard);
     controlThread.start(control_thread);
+    emergencyThread.start(emergency);
 
     tmr.attach(&sampling_ISR,T_sampling);
     sensorSampler.start_Sampling();
@@ -157,55 +161,6 @@ void consumer()
 
 }
 
-
-void control_thread() {
-
-    char c;
-
-    while(1) {
-
-        // std::cin >> c;
-
-        // poll the RXNE bit
-        // wait for something...
-        while(!(USART3->SR & 0x20)) {
-
-            Watchdog::get_instance().kick();
-            ThisThread::sleep_for(500ms);
-
-        }
-
-        c = USART3->DR; // a read clears the RXNE bit
-
-        if(c == 'x') {
-
-            samp_mtx.lock();
-            samp_toggle = !samp_toggle;
-            samp_mtx.unlock();
-
-
-            printf("\n\n\n\n\n!!!!!!!!!!!!!!SAMPLING IS: %s!!!!!!!!!!!!!!\n\n\n\n!", (samp_toggle) ? "ENABLED" : "DISABLED");
-
-
-            
-            // only wake up thread upong re-enabling logging
-            if(samp_toggle) {
-                
-                sensorSampler.samplingThread.flags_set(sampling_toggle_flag);
-                std::cout << "flag sent" << std::endl;
-
-            }
-
-            
-            
-        }
-
-    }
-
-}
-
-
-
 void SDcard() {
     while (true) {
 
@@ -265,8 +220,111 @@ void SDcard() {
     }
 }
 
-void emergency () {
-    
+
+void control_thread() {
+
+    char c;
+
+    while(1) {
+
+        // std::cin >> c;
+
+        // poll the RXNE bit
+        // wait for something...
+        while(!(USART3->SR & 0x20)) {
+
+            Watchdog::get_instance().kick();
+            ThisThread::sleep_for(500ms);
+
+        }
+
+        c = USART3->DR; // a read clears the RXNE bit
+
+        if(c == 'x') {
+
+            samp_mtx.lock();
+            samp_toggle = !samp_toggle;
+            samp_mtx.unlock();
+
+
+            printf("\n!!!!!!!!!!!!!!SAMPLING IS: %s!!!!!!!!!!!!!!\n!", (samp_toggle) ? "ENABLED" : "DISABLED");
+
+
+            
+            // only wake up thread upong re-enabling logging
+            if(samp_toggle) {
+                
+                sensorSampler.samplingThread.flags_set(sampling_toggle_flag);
+                std::cout << "flag sent" << std::endl;
+
+            }
+
+            
+            
+        }
+
+    }
+
+}
+
+
+
+
+// note: check crashing issue in this thread
+void emergency () 
+{
+    while (true) {
+        
+        
+        // light check
+        mtx.lock();
+        if (ldr.read() > 0.8f || ldr.read() < 0.2f) 
+        {
+
+            for (int a = 0; a < 4; a++) {
+                
+                buzz.playTone("A");
+                ThisThread::sleep_for(100ms);
+
+            }
+        }
+        mtx.unlock();
+        buzz.rest();
+
+        // temperature check
+        mtx.lock();
+        if (env.getTemperature() > 28.0f || env.getTemperature() < 10.0f) 
+        {
+            for (int a = 0; a < 4; a++) {
+                
+                buzz.playTone("B");
+                ThisThread::sleep_for(100ms);
+
+            }
+        }
+        mtx.unlock();
+        buzz.rest();
+
+        // pressure check
+        mtx.lock();
+        if (env.getPressure() > 1100.0f || env.getPressure() < 900.0f) 
+        {
+            for (int a = 0; a < 4; a++) {
+                
+                buzz.playTone("C");
+                ThisThread::sleep_for(100ms);
+
+            }
+        }
+        mtx.unlock();
+        buzz.rest();
+
+
+        ThisThread::sleep_for(1s);
+
+        
+            
+    }
 }
 
 
@@ -277,40 +335,3 @@ void sampling_ISR ()
 
     sensorSampler.samplingThread.flags_set(2); // sends a flag to the sampleData method in the class to begin sampling.
 }
-
-
-
-
-
-// temp stuff // 
-
-// thread to get the sampled data from the consumer
-// void SDcard () {
-
-//     ThisThread::flags_wait_any(10); // waiting for a flag from the consumer thread
-//    // ThisThread::flags_clear(10);
-
-//     char buffer[128];
-
-//     /*process data in the SDcard queue*/
-
-//     while (!sdcard_queue.empty()) {
-//         Envdata_t *sd_data;
-
-//         if (sdcard_queue.try_get(&sd_data)) {
-//             snprintf(buffer, sizeof(buffer),"\nTemperature: %3.1fC\nPressure: %4.1fmbar\nLight Level: %1.2f\n",
-//                          sd_data->temperature, sd_data->pressure, sd_data->lightLevel);
-//         }
-
-//         /*check if the sd card is inserted*/
-
-//         if (!sd.card_inserted())  printf("SD card not inserted\n");
-        
-//         if (sd.write_file("SampleData.txt",buffer)) printf("Data written to the SD Card successfull\n"); 
-        
-//         else   printf("Failed to write to the SD card\n");
-          
-//         /*print to the terminal*/
-//         printf("SD card Data:\n%s", buffer);
-//     }
-// }

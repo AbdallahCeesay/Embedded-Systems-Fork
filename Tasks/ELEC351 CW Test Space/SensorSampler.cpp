@@ -41,7 +41,7 @@ void SensorSampler::sampleData() {
 
         if(flag_temp) {
 
-            printf("\n\n\n\n\n*****sampling thread active!********\n\n\n\n");
+            printf("\n*****sampling thread active!********\n");
 
             Watchdog::get_instance().kick();
 
