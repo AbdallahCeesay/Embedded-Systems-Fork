@@ -1,3 +1,13 @@
+/* 
+* Filename: SensorSampler.cpp
+* Author: Abdallah Ceesay 10726858
+* Module: ELEC 351 Advanced Embedded Programming
+* Institution: Plymouth University
+* Professor: Yu Yao. Honourable mention: Nickolas Outram, Andrew Norris
+* Date: 25/11/24
+Description: Class method definitinos
+*/
+
 #include "mbed.h"
 #include "uop_msb.h"
 #include <chrono>
@@ -34,26 +44,18 @@ void SensorSampler::sampleData() {
 
     while (true) 
     {
-
         samp_mtx.lock();
         volatile bool flag_temp = samp_toggle;
         samp_mtx.unlock();
 
-        if(flag_temp) {
-
+        if(flag_temp) 
+        {
             printf("\n*****sampling thread active!********\n");
 
             Watchdog::get_instance().kick();
 
-            
             // Wait for sampling_ISR flag
             uint32_t flags = ThisThread::flags_wait_any(2 | 4); // Wait for sampling or disable flag
-
-            // if (flags & 4) {
-            //     // Disable sampling: wait until re-enabled
-            //     continue;
-            // }
-            
 
             /******** critical section begin ********/
             mtx.lock();
@@ -68,12 +70,9 @@ void SensorSampler::sampleData() {
 
             producerThread.flags_set(4); // Set a flag to wake up the producer thread
 
-
         }
-
         // thread sleeps if logging is disabled
         else ThisThread::flags_wait_any(sampling_toggle_flag);
-        
     }
 }
 

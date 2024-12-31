@@ -5,7 +5,7 @@
 * Institution: Plymouth University
 * Professor: Yu Yao. Honourable mention: Nickolas Outram, Andrew Norris
 * Date: 25/11/24
-* Description: method, constructor and Function definitions for this project
+Description: Class method definitinos
 */
 
 #include "mbed.h"
@@ -16,43 +16,63 @@
 
 extern EnvSensor env;
 extern AnalogIn ldr;
+extern Thread producerThread;
+extern Mutex mtx;
+extern uint32_t sampling_toggle_flag;
 
-/*this constructor is to make sure that whenever an object of this class is created, it is set to the highest priority thread and sets the stack size*/
 
-SensorSampler::SensorSampler() : samplingThread(osPriorityHigh, 1024) {
-    /*sets the thread priority and also the stact size. */
-    // note to self, don't forget to change the stack size to accommodate for more local vaiables
+volatile bool samp_toggle = 1;
+Mutex samp_mtx;
+
+typedef struct {
+    float temperature;
+    float pressure;
+    float lightLevel;
+} Envdata_t;
+
+/* Constructor */
+SensorSampler::SensorSampler() : samplingThread(osPriorityHigh, 2048) {
+    /* Sets the thread priority and also the stack size */
 }
 
 void SensorSampler::start_Sampling() {
-    samplingThread.start( callback(this, &SensorSampler::sampleData)); /*passing a reference to the function start using callback*/
+    samplingThread.start(callback(this, &SensorSampler::sampleData)); /* Pass a reference to the function start using callback */
 }
 
 void SensorSampler::sampleData() {
-    
-    while (true) {
+    extern volatile Envdata_t data;
 
+    while (true) 
+    {
+        samp_mtx.lock();
+        volatile bool flag_temp = samp_toggle;
+        samp_mtx.unlock();
 
-        // use signal wait mechanism //
-        // 1 create ISR
-        // 2 create timer/ticker
-        // 3 attach the timer to the ISR every x seconds
-        // 4 ISR sends signal/flag to this sampling thread
-        // 5 ThisThread::flags_wait_any(flag value here from ISR)
-        // 6 unblocks when receiving flag
-        // 6 clear the flags - these can queue up (ThisThread::flags_clear(flag value))
+        if(flag_temp) 
+        {
+            printf("\n*****sampling thread active!********\n");
 
-        // remove the chrono stuff - timing is handled by ISR and timer!!!
-        
-        
-        float temperature = env.getTemperature();
-        float pressure = env.getPressure();
+            Watchdog::get_instance().kick();
 
-        float lightLevel = ldr.read();
-        printf("Temperature: \t %.2f°C, Pressure: %.2fmbar \n, Light Level:  %.2f\n", temperature, pressure, lightLevel);
+            // Wait for sampling_ISR flag
+            uint32_t flags = ThisThread::flags_wait_any(2 | 4); // Wait for sampling or disable flag
 
-        // re-enable timer interrupt here
-        // tmr.attach(...)
-        
+            /******** critical section begin ********/
+            mtx.lock();
+
+            /* Read data */
+            data.temperature = env.getTemperature();
+            data.pressure = env.getPressure();
+            data.lightLevel = ldr.read();
+
+            mtx.unlock();
+            /******** critical section end ********/
+
+            producerThread.flags_set(4); // Set a flag to wake up the producer thread
+
+        }
+        // thread sleeps if logging is disabled
+        else ThisThread::flags_wait_any(sampling_toggle_flag);
     }
 }
+

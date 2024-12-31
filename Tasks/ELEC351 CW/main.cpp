@@ -1,135 +1,313 @@
 /* 
- * Filename: main.cpp
- * Author: Andrew Norris
- * Institution: Plymouth University
- * Date: 21/10/24
- * Description: Starter Code for ELEC351 Coursework 24/25
- * 
- * Notes:
- *
- * For documentation regarding the module support board library, please see the Readme.md on github
- * https://github.com/PlymouthUniversityEEER/PlymouthUniversityModuleSupportBoard/blob/main/README.md
- *
- * You will need to set the module support board version that you have in MSB_Config.h
- * The default if V4. If you are using a V2 comment out "#define MSB_VER 4" and uncomment "#define MSB_VER 2"
- * 
- * 
- */
+* Filename: main.cpp
+* Author: Abdallah Ceesay 10726858
+* Module: ELEC 351 Advanced Embedded Programming
+* Institution: Plymouth University
+* Professor: Yu Yao. Honourable mention: Nickolas Outram, Andrew Norris
+* Date: 25/11/24
+*/
 
-#include "uop_msb.h"
 #include "mbed.h"
+#include "uop_msb.h"
 #include <chrono>
+#include <SensorSampler.hpp>
+#include <cstdint>
+#include <cstdio>
+#include <chrono>
+#include <iostream>
 
 
-//These objects have already been created for you in uop_msb.h
-extern EnvSensor env;
-extern LatchedLED latchedLEDs;
+static UnbufferedSerial serial_port(USBTX, USBRX); // Create a BufferedSerial object (USART) with a default baud rate
+
+// externs
+extern volatile bool samp_toggle;
+extern Mutex samp_mtx;
 extern SDCard sd;
-extern LCD_16X2_DISPLAY disp;
+extern Buzzer buzz;
+extern EnvSensor env;
+extern AnalogIn ldr;
 
-// Global variables
-uint32_t sample_num = 0;
+// parameters
+constexpr uint8_t size = 60;                                     // size of Mail Queue
+constexpr chrono::milliseconds T_sampling = 10000ms;              // Sampling period, in ms
+constexpr uint32_t WATCHDOG_TIMEOUT_MS = 5000;
+uint32_t sampling_toggle_flag = 1024;
+
+
+typedef struct {
+    float temperature;
+    float pressure;
+    float lightLevel;
+} Envdata_t;
+
+
+volatile Envdata_t data; // shared variable between consumer, producer thread and sd card thread
+
+/*Mutexes*/
+Mutex mtx, conumer_to_sdcard, light;
+
+
+/*Threads, mailboxes and queues*/
+Ticker tmr;
+SensorSampler sensorSampler;
+Thread producerThread, consumerThread, sdcardThread, controlThread, emergencyThread;
+Mail<Envdata_t, size> mail_box;
+Queue<Envdata_t, size> sdcard_queue; // queue for sdcard thread
+
+
+/*function decalartion*/
+void producer();
+void consumer();
+void sampling_ISR();
+void SDcard();
+void control_thread();
+void emergency();
 
 int main()
 {
 
-    // Set output enable on the latched LEDs.
-    latchedLEDs.enable(true);
-    
-    // Set the time on the RTC (You can use https://www.epochconverter.com/ for testing)
-    uint64_t now = 1729519318;
-    set_time(now);
+    // Set desired properties (9600-8-N-1).
+    serial_port.baud(9600);
+    serial_port.format(
+        /* bits */ 8,
+        /* parity */ SerialBase::None,
+        /* stop bit */ 1
+    );
 
-    // Write some text to the SD card
-    if(sd.card_inserted()){ // Check to see if the card is present (polls PF_4)
-        int err = sd.write_file("test.txt", "Plymouth University - ELEC351 Coursework 24-25\n");    // Attempt to write text to file
-        if(err == 0){   // If is successful, read the content of the file back
-            printf("Successfully written to SD card\n");
-            printf("---------------------------\nFile contents:\n");
-            sd.print_file("test.txt",false);
-            printf("---------------------------\n");
+    printf("\n\n\n\n\n\n ````````SYSTEM RESET`````````` \n\n\n\n\n\n\n");
+    Watchdog &watchdog = Watchdog::get_instance();
+    watchdog.start(WATCHDOG_TIMEOUT_MS);
+
+    producerThread.start(producer);
+    consumerThread.start(consumer);
+    sdcardThread.start(SDcard);
+    controlThread.start(control_thread);
+    emergencyThread.start(emergency);
+
+    tmr.attach(&sampling_ISR,T_sampling);
+    sensorSampler.start_Sampling();
+}
+
+/*Threads*/
+void producer() 
+{
+    while(true) 
+    {
+        Watchdog::get_instance().kick();
+        printf("Putting data onto mail...\n");
+
+        ThisThread::flags_wait_any(4); // waits for a flag from the sampleData method after it's done sampling
+        ThisThread::flags_clear(4);
+
+        /* tries to allocate space in the mailbox */
+        Envdata_t* data_ptr = mail_box.try_alloc();
+
+        if (data_ptr == NULL) {
+
+            consumerThread.flags_set(6); // sends full signal to consumer thread so it can start flusing the mailbox
+            
+            printf("\nBuffer FULL\n");
+            
+            // wait for empty flag from t2
+            ThisThread::flags_wait_any(8);
+            ThisThread::flags_clear(8);
         }
-        else{
-            printf("Error Writing to SD card\n");
+        else 
+        {
+            /******** critical section begin ********/
+            mtx.lock();
+            // const_cast to remove the volatile qualifier.
+            *data_ptr = const_cast<Envdata_t&>(data); // obtained pointer to data
+
+            mtx.unlock();
+            /******** critical section end ********/
+            
+            mail_box.put(data_ptr); // put data in the mailbox
         }
     }
-    else{
-        printf("No SD Card Detected\n");
+}
+
+void consumer()
+{
+    while(true) {
+
+        Watchdog::get_instance().kick();
+
+        // once buffer is full
+        ThisThread::flags_wait_any(6); // waits for this signal from the producer thread then start flusing the mailbox
+        ThisThread::flags_clear(6);
+        
+        printf("\n******* FLUSHING *******\n");
+        
+        while(!mail_box.empty()) 
+        {
+            Envdata_t *rx = mail_box.try_get();
+            if (rx) 
+            {
+                Envdata_t received_data = *rx;
+                if (!sdcard_queue.try_put(&received_data)) printf("SD card queue FULL\n");
+            }
+
+            /*Full mailbox memory*/
+            if (mail_box.free(rx) != osOK) printf("Mail free failed\n");     
+        }
+        // once empty and flushing completed, send signal to the producer thread to begin adding to the mailbox again
+        producerThread.flags_set(8);
+        sdcardThread.flags_set(10); // set flag to run the sdcard thread
     }
+}
 
+void SDcard() 
+{
+    while (true) 
+    {
+        // Wait for a flag from the consumer thread to process the SD card queue
+        ThisThread::flags_wait_any(10);
+        ThisThread::flags_clear(10);
 
-    // Print the time and date
-    time_t time_now = time(NULL);   // Get a time_t timestamp from the RTC
-    struct tm* tt;                  // Create empty tm struct
-    tt = localtime(&time_now);      // Convert time_t to tm struct using localtime 
-    printf("%s\n",asctime(tt));     // Print in human readable format
+        printf("\n--- Processing SD card queue ---\n");
 
-    while (true) {
-        // Sample the data
-        float temp = env.getTemperature();
-        float pressure = env.getPressure();
-        float light_level = ldr.read();
+        char buffer[128];
+        bool success = true;
 
-        // Print the samples to the terminal
-        printf("\n----- Sample %d -----\nTemperature:\t%3.1fC\nPressure:\t%4.1fmbar\nLight Level:\t%1.2f\n", sample_num,temp,pressure,light_level);
+        /* Process and write all data in the SD card queue */
+        // WARNING: THIS NEVER EXITS UNDER CERTAIN CONDITIONS
+        while (!sdcard_queue.empty()) {
 
-        sample_num++;
+            Watchdog::get_instance().kick();
+            Envdata_t *sd_data;
 
-        // Write the current light level as a float to the 7-segment display
-        latchedLEDs.write_seven_seg(light_level);
+            if (sdcard_queue.try_get(&sd_data)) {
+                // Format the data into the buffer
+                snprintf(buffer, sizeof(buffer),
+                         "\nTemperature: %3.1fC\nPressure: %4.1fmbar\nLight Level: %1.2f\n",
+                         sd_data->temperature, sd_data->pressure, sd_data->lightLevel);
 
-        // If the current light level is above a threshold take action
-        if(light_level > 0.5f){
-            for(int i=0;i<4;i++){
-                buzz.playTone("C");                     // Play tone on buzzer
-                latchedLEDs.write_strip(0xFF,RED);      // Turn on all LEDs on RGB bar
-                latchedLEDs.write_strip(0xFF,GREEN);
-                latchedLEDs.write_strip(0xFF,BLUE);
-                ThisThread::sleep_for(200ms);
+                /* Check if the SD card is inserted */
+                if (!sd.card_inserted()) {
+                    printf("SD card not inserted. Skipping write operation.\n");
+                    success = false;
+                    break; // Exit early if SD card is not available
+                }
 
-                buzz.rest();                            // Stop buzzer
-                latchedLEDs.write_strip(0x0,RED);       // Turn off all LEDs on RGB bar
-                latchedLEDs.write_strip(0x0,GREEN);
-                latchedLEDs.write_strip(0x0,BLUE);
-                ThisThread::sleep_for(200ms);
+                /* Write to the SD card */
+                // success returns 0; else -1
+                if (sd.write_file("SampleData.txt", buffer) == 0) {
+                    printf("Data written to the SD card successfully:\n%s", buffer);
+                } else {
+                    printf("Failed to write to the SD card.\n");
+                    success = false;
+                    break; // Exit if writing fails
+                }
+
+            } else 
+            {
+                printf("Failed to retrieve data from the SD card queue.\n");
+                success = false;
+                break;
             }
         }
-        else{
-            latchedLEDs.write_strip(0x0,RED);           // Turn off all LEDs on RGB bar
-            latchedLEDs.write_strip(0x0,GREEN);
-            latchedLEDs.write_strip(0x0,BLUE);
+
+        /* Acknowledgment */
+        if (success) {
+            printf("\n--- All samples successfully written to the SD card. Buffer emptied. ---\n");
+        } else {
+            printf("\n--- Error occurred while processing SD card data. ---\n");
+        }
+    }
+}
+
+
+void control_thread() 
+{
+    char c;
+    while(1) 
+    {
+        // poll the RXNE bit
+        // wait for something...
+        while(!(USART3->SR & 0x20)) {
+
+            Watchdog::get_instance().kick();
+            ThisThread::sleep_for(500ms);
         }
 
-        // Print the time and date
-        time_t time_now = time(NULL);   // Get a time_t timestamp from the RTC
-        struct tm* tt;                  // Create empty tm struct
-        tt = localtime(&time_now);      // Convert time_t to tm struct using localtime
-        printf("%s\n",asctime(tt));     // Print in human readable format
+        c = USART3->DR; // a read clears the RXNE bit
 
-        // Write the time and date on the LCD
-        disp.cls();                     // Clear the LCD                 
-        char lcd_line_buffer[17];           
-        
-        strftime(lcd_line_buffer, sizeof(lcd_line_buffer), "%a %d-%b-%Y", tt);  // Create a string DDD dd-MM-YYYY
-        disp.locate(0,0);                                                       // Set LCD cursor to (0,0)
-        disp.printf("%s",lcd_line_buffer);                                      // Write text to LCD
-        
-        strftime(lcd_line_buffer, sizeof(lcd_line_buffer), "     %H:%M", tt);   // Create a string HH:mm
-        disp.locate(1,0);                                                       // Set LCD cursor to (0,0)
-        disp.printf("%s",lcd_line_buffer);                                      // Write text to LCD
+        if(c == 'x') {
 
-        // Wait 5 seconds before next sample
-        ThisThread::sleep_for(std::chrono::seconds(5));
+            samp_mtx.lock();
+            samp_toggle = !samp_toggle;
+            samp_mtx.unlock();
+
+            printf("\n!!!!!!!!!!!!!!SAMPLING IS: %s!!!!!!!!!!!!!!\n!", (samp_toggle) ? "ENABLED" : "DISABLED");
+
+            // only wake up thread upong re-enabling logging
+            if(samp_toggle) {
+                
+                sensorSampler.samplingThread.flags_set(sampling_toggle_flag);
+                std::cout << "flag sent" << std::endl;
+            }
+        }
     }
 }
 
 
 
-// example ISR code
-// void timer_ISR() {
 
-    // detach interrupt (tmr.attach(NULL)) -- to prevent it from interrupting until we are done
-    // send flag
-    // return
-// }
+// note: check crashing issue in this thread
+void emergency () 
+{
+    while (true) 
+    {
+        // light check
+        mtx.lock();
+        if (ldr.read() > 0.8f || ldr.read() < 0.2f) 
+        {
 
+            for (int a = 0; a < 4; a++) {
+                
+                buzz.playTone("A");
+                ThisThread::sleep_for(100ms);
+
+            }
+        }
+        mtx.unlock();
+        buzz.rest();
+
+        // temperature check
+        mtx.lock();
+        if (env.getTemperature() > 28.0f || env.getTemperature() < 10.0f) 
+        {
+            for (int a = 0; a < 4; a++) {
+                
+                buzz.playTone("B");
+                ThisThread::sleep_for(100ms);
+
+            }
+        }
+        mtx.unlock();
+        buzz.rest();
+
+        // pressure check
+        mtx.lock();
+        if (env.getPressure() > 1100.0f || env.getPressure() < 900.0f) 
+        {
+            for (int a = 0; a < 4; a++) {
+                
+                buzz.playTone("C");
+                ThisThread::sleep_for(100ms);
+            }
+        }
+        mtx.unlock();
+        buzz.rest();
+
+        ThisThread::sleep_for(1s);      
+    }
+}
+
+
+/*ISR*/
+void sampling_ISR ()
+{
+    sensorSampler.samplingThread.flags_set(2); // sends a flag to the sampleData method in the class to begin sampling.
+}

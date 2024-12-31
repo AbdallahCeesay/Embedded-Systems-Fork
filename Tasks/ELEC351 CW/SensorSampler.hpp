@@ -18,18 +18,15 @@
 
 class SensorSampler {
     public:
-        /* constructor of this class */
-        SensorSampler();
 
-        /*method to start the sampling thread - this is done every 10 secs*/
-        void start_Sampling();
-
-    /*using encapsulation here, the implementation of the sampling of the sensors is hidden from the end user */
-    private:
         Thread samplingThread;
+        SensorSampler(); /*constructor*/
+        void start_Sampling();
+        
+
+    private:
         Timer timer;
 
-        /*method for sampling the data. This is what reads from the senor and the LDR at a set sample rate*/
         void sampleData();
 };
 

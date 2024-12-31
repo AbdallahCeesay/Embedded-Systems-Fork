@@ -1,3 +1,12 @@
+/* 
+* Filename: main.cpp
+* Author: Abdallah Ceesay 10726858
+* Module: ELEC 351 Advanced Embedded Programming
+* Institution: Plymouth University
+* Professor: Yu Yao. Honourable mention: Nickolas Outram, Andrew Norris
+* Date: 25/11/24
+*/
+
 #include "mbed.h"
 #include "uop_msb.h"
 #include <chrono>
@@ -8,48 +17,45 @@
 #include <iostream>
 
 
-#define DEBUG
-
-// IO
 static UnbufferedSerial serial_port(USBTX, USBRX); // Create a BufferedSerial object (USART) with a default baud rate
 
 // externs
 extern volatile bool samp_toggle;
 extern Mutex samp_mtx;
+extern SDCard sd;
+extern Buzzer buzz;
+extern EnvSensor env;
+extern AnalogIn ldr;
 
 // parameters
-constexpr uint8_t size = 4;                                     // size of Mail Queue
-constexpr chrono::milliseconds T_sampling = 500ms;              // Sampling period, in ms
+constexpr uint8_t size = 60;                                     // size of Mail Queue
+constexpr chrono::milliseconds T_sampling = 10000ms;              // Sampling period, in ms
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 5000;
 uint32_t sampling_toggle_flag = 1024;
 
 
-
-
-extern SDCard sd;
-extern Buzzer buzz;
-extern EnvSensor env;
-extern AnalogIn ldr;// (AN_LDR_PIN);
-
 typedef struct {
-
     float temperature;
     float pressure;
     float lightLevel;
-
 } Envdata_t;
 
 
-volatile Envdata_t data; // shared variable between consumer and producer thread
- 
+volatile Envdata_t data; // shared variable between consumer, producer thread and sd card thread
+
+/*Mutexes*/
 Mutex mtx, conumer_to_sdcard, light;
 
+
+/*Threads, mailboxes and queues*/
 Ticker tmr;
 SensorSampler sensorSampler;
 Thread producerThread, consumerThread, sdcardThread, controlThread, emergencyThread;
 Mail<Envdata_t, size> mail_box;
 Queue<Envdata_t, size> sdcard_queue; // queue for sdcard thread
 
+
+/*function decalartion*/
 void producer();
 void consumer();
 void sampling_ISR();
@@ -61,14 +67,12 @@ int main()
 {
 
     // Set desired properties (9600-8-N-1).
-    // from MBED documentation: https://os.mbed.com/docs/mbed-os/v6.16/apis/unbufferedserial.html
     serial_port.baud(9600);
     serial_port.format(
         /* bits */ 8,
         /* parity */ SerialBase::None,
         /* stop bit */ 1
     );
-
 
     printf("\n\n\n\n\n\n ````````SYSTEM RESET`````````` \n\n\n\n\n\n\n");
     Watchdog &watchdog = Watchdog::get_instance();
@@ -87,8 +91,8 @@ int main()
 /*Threads*/
 void producer() 
 {
-
-    while(true) {
+    while(true) 
+    {
         Watchdog::get_instance().kick();
         printf("Putting data onto mail...\n");
 
@@ -108,8 +112,8 @@ void producer()
             ThisThread::flags_wait_any(8);
             ThisThread::flags_clear(8);
         }
-
-        else {
+        else 
+        {
             /******** critical section begin ********/
             mtx.lock();
             // const_cast to remove the volatile qualifier.
@@ -141,30 +145,22 @@ void consumer()
             if (rx) 
             {
                 Envdata_t received_data = *rx;
-
-                /*send data to the sdcard*/
-                // only print upon failure
                 if (!sdcard_queue.try_put(&received_data)) printf("SD card queue FULL\n");
-             
             }
 
             /*Full mailbox memory*/
-            if (mail_box.free(rx) != osOK) printf("Mail free failed\n");  
-                
+            if (mail_box.free(rx) != osOK) printf("Mail free failed\n");     
         }
-
         // once empty and flushing completed, send signal to the producer thread to begin adding to the mailbox again
         producerThread.flags_set(8);
         sdcardThread.flags_set(10); // set flag to run the sdcard thread
-
     }
-
 }
 
-void SDcard() {
-    while (true) {
-
-        
+void SDcard() 
+{
+    while (true) 
+    {
         // Wait for a flag from the consumer thread to process the SD card queue
         ThisThread::flags_wait_any(10);
         ThisThread::flags_clear(10);
@@ -204,7 +200,8 @@ void SDcard() {
                     break; // Exit if writing fails
                 }
 
-            } else {
+            } else 
+            {
                 printf("Failed to retrieve data from the SD card queue.\n");
                 success = false;
                 break;
@@ -221,21 +218,17 @@ void SDcard() {
 }
 
 
-void control_thread() {
-
+void control_thread() 
+{
     char c;
-
-    while(1) {
-
-        // std::cin >> c;
-
+    while(1) 
+    {
         // poll the RXNE bit
         // wait for something...
         while(!(USART3->SR & 0x20)) {
 
             Watchdog::get_instance().kick();
             ThisThread::sleep_for(500ms);
-
         }
 
         c = USART3->DR; // a read clears the RXNE bit
@@ -246,25 +239,16 @@ void control_thread() {
             samp_toggle = !samp_toggle;
             samp_mtx.unlock();
 
-
             printf("\n!!!!!!!!!!!!!!SAMPLING IS: %s!!!!!!!!!!!!!!\n!", (samp_toggle) ? "ENABLED" : "DISABLED");
 
-
-            
             // only wake up thread upong re-enabling logging
             if(samp_toggle) {
                 
                 sensorSampler.samplingThread.flags_set(sampling_toggle_flag);
                 std::cout << "flag sent" << std::endl;
-
             }
-
-            
-            
         }
-
     }
-
 }
 
 
@@ -273,9 +257,8 @@ void control_thread() {
 // note: check crashing issue in this thread
 void emergency () 
 {
-    while (true) {
-        
-        
+    while (true) 
+    {
         // light check
         mtx.lock();
         if (ldr.read() > 0.8f || ldr.read() < 0.2f) 
@@ -313,25 +296,18 @@ void emergency ()
                 
                 buzz.playTone("C");
                 ThisThread::sleep_for(100ms);
-
             }
         }
         mtx.unlock();
         buzz.rest();
 
-
-        ThisThread::sleep_for(1s);
-
-        
-            
+        ThisThread::sleep_for(1s);      
     }
 }
 
 
 /*ISR*/
-
 void sampling_ISR ()
 {
-
     sensorSampler.samplingThread.flags_set(2); // sends a flag to the sampleData method in the class to begin sampling.
 }
