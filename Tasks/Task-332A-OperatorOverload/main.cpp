@@ -37,7 +37,7 @@ public:
     void setValue(double u) {
         _real = u;
     }
-    void setValue(int u) {
+    void setValue(int u) { 
         _real = (double)u;
     }
     void setValue(string strVal) {

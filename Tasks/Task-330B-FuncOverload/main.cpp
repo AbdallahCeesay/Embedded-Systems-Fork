@@ -9,7 +9,7 @@ class Flashy {
     //Composition in action here
     DigitalOut led;
     Ticker tick;
-    //Internal state
+    //Internal state 
     microseconds _interval;
     PinName _pin;
     bool _enabled = false;
@@ -95,7 +95,7 @@ int main()
             flashGreen.setInterval(50ms);
         } else {
             flashGreen.setInterval(500ms);
-        }
+        } 
     }
 }
 
